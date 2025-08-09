@@ -50,112 +50,15 @@ app.get('/api/youtube', async (req, res) => {
 
     console.log(`[debug] Processing URL: ${ytUrl}, Video ID: ${videoId}`)
 
-    // Try ytdl-core without FFmpeg (direct stream)
-    console.log('[ytdl] Trying ytdl-core direct stream')
-    try {
-      const ytdl = (await import('@distube/ytdl-core')).default
-
-      const stream = ytdl(ytUrl, {
-        quality: 'highestaudio',
-        filter: (f) => (f.hasAudio && !f.hasVideo),
-        highWaterMark: 1 << 25,
-        requestOptions: { 
-          headers: { 
-            'user-agent': ua, 
-            'accept-language': 'en-US,en;q=0.9' 
-          } 
-        },
-      })
-
-      // Stream directly without FFmpeg
-      res.setHeader('Content-Type', 'audio/mpeg')
-      stream.pipe(res)
-        
-    } catch (e) {
-      console.error('[ytdl] error:', e.message)
-      
-      // Fallback to Invidious API
-      console.log('[invidious] Trying Invidious fallback')
-      const invidiousInstances = [
-        'https://invidious.syncpundit.io',
-        'https://invidious.weblibre.org',
-        'https://invidious.nerdvpn.de',
-      ]
-
-      for (const base of invidiousInstances) {
-        try {
-          console.log(`[invidious] Trying ${base}`)
-          const api = `${base}/api/v1/videos/${videoId}`
-          const r = await fetch(api, { 
-            headers: { 
-              'user-agent': ua,
-              'accept': 'application/json'
-            },
-            timeout: 8000 
-          })
-          
-          if (!r.ok) {
-            console.log(`[invidious] ${base} failed: ${r.status}`)
-            continue
-          }
-          
-          const data = await r.json()
-          const formatStreams = data.formatStreams || []
-          const adaptiveFormats = data.adaptiveFormats || []
-          
-          const allFormats = [...formatStreams, ...adaptiveFormats]
-          const audioFormats = allFormats.filter(f => 
-            f.type && f.type.includes('audio') && !f.type.includes('video')
-          )
-          
-          if (!audioFormats.length) {
-            console.log(`[invidious] ${base} no audio formats`)
-            continue
-          }
-
-          audioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))
-          const best = audioFormats[0]
-          
-          if (!best || !best.url) {
-            console.log(`[invidious] ${base} no valid stream URL`)
-            continue
-          }
-
-          console.log(`[invidious] Using ${base} with ${best.type || 'unknown'} format`)
-          
-          const proxied = await fetch(best.url, { 
-            headers: { 'user-agent': ua },
-            timeout: 12000 
-          })
-          
-          if (!proxied.ok || !proxied.body) {
-            console.log(`[invidious] Stream fetch failed: ${proxied.status}`)
-            continue
-          }
-
-          const contentType = best.type || 'audio/mpeg'
-          res.setHeader('Content-Type', contentType)
-          
-          const reader = proxied.body.getReader()
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) { 
-              res.end()
-              return 
-            }
-            res.write(Buffer.from(value))
-          }
-          
-        } catch (e) {
-          console.log(`[invidious] ${base} error:`, e.message)
-          continue
-        }
-      }
-
-      // Final fallback
-      console.log('[fallback] All methods failed, returning error')
-      if (!res.headersSent) res.status(500).end('YouTube processing failed')
-    }
+    // For now, return a test response to verify frontend-backend connection
+    console.log('[test] Returning test response')
+    res.json({ 
+      message: 'YouTube processing temporarily disabled due to rate limiting',
+      url: ytUrl,
+      videoId: videoId,
+      timestamp: new Date().toISOString(),
+      note: 'Frontend-backend connection working. YouTube solution in progress.'
+    })
     
   } catch (err) {
     console.error('[youtube proxy error]', err?.message || err)
