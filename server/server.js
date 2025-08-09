@@ -40,7 +40,7 @@ app.get('/api/youtube', async (req, res) => {
       return
     }
 
-    // Try Piped API first (more reliable)
+    // Use Piped API only (no ytdl-core to avoid rate limiting)
     const pipedInstances = [
       'https://pipedapi.kavin.rocks',
       'https://piped.video',
@@ -92,7 +92,7 @@ app.get('/api/youtube', async (req, res) => {
 
         console.log(`[piped] Using ${base} with ${best.mimeType || 'unknown'} stream`)
         
-        // Stream the audio
+        // Stream the audio directly (no ffmpeg conversion)
         const proxied = await fetch(best.url, { 
           headers: { 'user-agent': ua },
           timeout: 15000 
@@ -103,9 +103,11 @@ app.get('/api/youtube', async (req, res) => {
           continue
         }
 
-        res.setHeader('Content-Type', 'audio/mpeg')
+        // Set appropriate content type
+        const contentType = best.mimeType || 'audio/mpeg'
+        res.setHeader('Content-Type', contentType)
         
-        // Simple stream without ffmpeg for now
+        // Stream directly to client
         const reader = proxied.body.getReader()
         while (true) {
           const { done, value } = await reader.read()
@@ -122,46 +124,9 @@ app.get('/api/youtube', async (req, res) => {
       }
     }
 
-    // Fallback to ytdl-core
-    console.log('[ytdl] Trying ytdl-core fallback')
-    try {
-      const ytdl = (await import('@distube/ytdl-core')).default
-      const ffmpeg = (await import('fluent-ffmpeg')).default
-      const ffmpegPath = (await import('ffmpeg-static')).default
-      
-      if (ffmpegPath) { 
-        try { ffmpeg.setFfmpegPath(ffmpegPath) } catch {} 
-      }
-
-      const stream = ytdl(ytUrl, {
-        quality: 'highestaudio',
-        filter: (f) => (f.hasAudio && !f.hasVideo),
-        highWaterMark: 1 << 25,
-        requestOptions: { 
-          headers: { 
-            'user-agent': ua, 
-            'accept-language': 'en-US,en;q=0.9' 
-          } 
-        },
-      })
-
-      res.setHeader('Content-Type', 'audio/mpeg')
-      
-      ffmpeg(stream)
-        .noVideo()
-        .audioCodec('libmp3lame')
-        .audioBitrate('192k')
-        .format('mp3')
-        .on('error', (err) => { 
-          console.error('[ytdl] ffmpeg error:', err.message)
-          if (!res.headersSent) res.status(500).end('Transcode error') 
-        })
-        .pipe(res, { end: true })
-        
-    } catch (e) {
-      console.error('[ytdl] error:', e.message)
-      if (!res.headersSent) res.status(500).end('YouTube processing failed')
-    }
+    // If all Piped instances failed
+    console.error('[piped] All instances failed')
+    if (!res.headersSent) res.status(500).end('All YouTube sources failed')
     
   } catch (err) {
     console.error('[youtube proxy error]', err?.message || err)
