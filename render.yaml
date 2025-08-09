@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: video-noise-backend
+    env: node
+    plan: free
+    buildCommand: npm install --production
+    startCommand: node server/server.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+    healthCheckPath: /healthz
+    # Optional: region selection
+    # region: oregon
+
+

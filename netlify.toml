@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Optional: If you prefer path-based proxy instead of VITE_BACKEND_BASE,
+# uncomment and set your deployed backend URL, then redeploy on Netlify.
+#
+## [[redirects]]
+##   from = "/api/*"
+##   to = "https://YOUR-BACKEND-HOST.example.com/api/:splat"
+##   status = 200
+##   force = true
+
+
