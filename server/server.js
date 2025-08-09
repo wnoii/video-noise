@@ -40,12 +40,14 @@ app.get('/api/youtube', async (req, res) => {
       return
     }
 
-    // Use Piped API only (no ytdl-core to avoid rate limiting)
+    // Use more reliable Piped API instances
     const pipedInstances = [
+      'https://pipedapi-libre.kavin.rocks',
+      'https://api.piped.projectsegfau.lt',
+      'https://pipedapi.moomoo.me',
+      'https://pipedapi.syncpundit.io',
       'https://pipedapi.kavin.rocks',
       'https://piped.video',
-      'https://pipedapi.adminforge.de',
-      'https://piped.projectsegfau.lt',
     ]
 
     for (const base of pipedInstances) {
@@ -53,8 +55,11 @@ app.get('/api/youtube', async (req, res) => {
         console.log(`[piped] Trying ${base}`)
         const api = `${base}/api/v1/streams/${videoId}`
         const r = await fetch(api, { 
-          headers: { 'user-agent': ua },
-          timeout: 10000 
+          headers: { 
+            'user-agent': ua,
+            'accept': 'application/json'
+          },
+          timeout: 8000 
         })
         
         if (!r.ok) {
@@ -95,7 +100,7 @@ app.get('/api/youtube', async (req, res) => {
         // Stream the audio directly (no ffmpeg conversion)
         const proxied = await fetch(best.url, { 
           headers: { 'user-agent': ua },
-          timeout: 15000 
+          timeout: 12000 
         })
         
         if (!proxied.ok || !proxied.body) {
