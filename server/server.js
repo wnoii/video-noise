@@ -50,16 +50,10 @@ app.get('/api/youtube', async (req, res) => {
 
     console.log(`[debug] Processing URL: ${ytUrl}, Video ID: ${videoId}`)
 
-    // Try ytdl-core first (most reliable)
-    console.log('[ytdl] Trying ytdl-core')
+    // Try ytdl-core without FFmpeg (direct stream)
+    console.log('[ytdl] Trying ytdl-core direct stream')
     try {
       const ytdl = (await import('@distube/ytdl-core')).default
-      const ffmpeg = (await import('fluent-ffmpeg')).default
-      const ffmpegPath = (await import('ffmpeg-static')).default
-      
-      if (ffmpegPath) { 
-        try { ffmpeg.setFfmpegPath(ffmpegPath) } catch {} 
-      }
 
       const stream = ytdl(ytUrl, {
         quality: 'highestaudio',
@@ -73,18 +67,9 @@ app.get('/api/youtube', async (req, res) => {
         },
       })
 
+      // Stream directly without FFmpeg
       res.setHeader('Content-Type', 'audio/mpeg')
-      
-      ffmpeg(stream)
-        .noVideo()
-        .audioCodec('libmp3lame')
-        .audioBitrate('192k')
-        .format('mp3')
-        .on('error', (err) => { 
-          console.error('[ytdl] ffmpeg error:', err.message)
-          if (!res.headersSent) res.status(500).end('Transcode error') 
-        })
-        .pipe(res, { end: true })
+      stream.pipe(res)
         
     } catch (e) {
       console.error('[ytdl] error:', e.message)
