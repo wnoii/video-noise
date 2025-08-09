@@ -13,11 +13,14 @@ app.get('/api/test', (req, res) => {
 
 app.get('/api/youtube', async (req, res) => {
   try {
-    const ytUrl = req.query.url
+    let ytUrl = req.query.url
     if (!ytUrl || !/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(ytUrl)) {
       res.status(400).end('Invalid url')
       return
     }
+
+    // Decode URL properly
+    ytUrl = decodeURIComponent(ytUrl)
 
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Cache-Control', 'no-cache')
@@ -44,6 +47,8 @@ app.get('/api/youtube', async (req, res) => {
       res.status(400).end('Invalid YouTube URL')
       return
     }
+
+    console.log(`[debug] Processing URL: ${ytUrl}, Video ID: ${videoId}`)
 
     // Try ytdl-core first (most reliable)
     console.log('[ytdl] Trying ytdl-core')
