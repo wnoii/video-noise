@@ -69,26 +69,89 @@ app.get('/api/youtube', async (req, res) => {
             const video = data.items[0]
             console.log(`[youtube-api] Found video: ${video.snippet.title}`)
             
-            // Now get the audio stream using ytdl-core
-            console.log('[youtube-api] Getting audio stream with ytdl-core')
-            const ytdl = (await import('@distube/ytdl-core')).default
+            // Now get audio stream using Invidious API (more reliable than ytdl-core)
+            console.log('[invidious] Getting audio stream with Invidious API')
+            
+            const invidiousInstances = [
+              'https://invidious.syncpundit.io',
+              'https://invidious.weblibre.org', 
+              'https://invidious.nerdvpn.de',
+              'https://invidious.privacydev.net',
+              'https://invidious.projectsegfau.com'
+            ]
 
-            const stream = ytdl(ytUrl, {
-              quality: 'highestaudio',
-              filter: (f) => (f.hasAudio && !f.hasVideo),
-              highWaterMark: 1 << 25,
-              requestOptions: { 
-                headers: { 
-                  'user-agent': ua, 
-                  'accept-language': 'en-US,en;q=0.9' 
-                } 
-              },
-            })
+            for (const base of invidiousInstances) {
+              try {
+                console.log(`[invidious] Trying ${base}`)
+                const api = `${base}/api/v1/videos/${videoId}`
+                const r = await fetch(api, { 
+                  headers: { 
+                    'user-agent': ua,
+                    'accept': 'application/json'
+                  },
+                  timeout: 8000 
+                })
+                
+                if (!r.ok) {
+                  console.log(`[invidious] ${base} failed: ${r.status}`)
+                  continue
+                }
+                
+                const videoData = await r.json()
+                const formatStreams = videoData.formatStreams || []
+                const adaptiveFormats = videoData.adaptiveFormats || []
+                
+                const allFormats = [...formatStreams, ...adaptiveFormats]
+                const audioFormats = allFormats.filter(f => 
+                  f.type && f.type.includes('audio') && !f.type.includes('video')
+                )
+                
+                if (!audioFormats.length) {
+                  console.log(`[invidious] ${base} no audio formats`)
+                  continue
+                }
 
-            // Stream the audio directly
-            res.setHeader('Content-Type', 'audio/mpeg')
-            stream.pipe(res)
-            return
+                audioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))
+                const best = audioFormats[0]
+                
+                if (!best || !best.url) {
+                  console.log(`[invidious] ${base} no valid stream URL`)
+                  continue
+                }
+
+                console.log(`[invidious] Using ${base} with ${best.type || 'unknown'} format`)
+                
+                const proxied = await fetch(best.url, { 
+                  headers: { 'user-agent': ua },
+                  timeout: 12000 
+                })
+                
+                if (!proxied.ok || !proxied.body) {
+                  console.log(`[invidious] Stream fetch failed: ${proxied.status}`)
+                  continue
+                }
+
+                const contentType = best.type || 'audio/mpeg'
+                res.setHeader('Content-Type', contentType)
+                
+                const reader = proxied.body.getReader()
+                while (true) {
+                  const { done, value } = await reader.read()
+                  if (done) { 
+                    res.end()
+                    return 
+                  }
+                  res.write(Buffer.from(value))
+                }
+                
+              } catch (e) {
+                console.log(`[invidious] ${base} error:`, e.message)
+                continue
+              }
+            }
+
+            // If Invidious fails, fall back to ytdl-core
+            console.log('[invidious] All instances failed, trying ytdl-core fallback')
           }
         }
       } catch (e) {
