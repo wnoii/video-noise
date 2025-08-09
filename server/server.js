@@ -69,15 +69,25 @@ app.get('/api/youtube', async (req, res) => {
             const video = data.items[0]
             console.log(`[youtube-api] Found video: ${video.snippet.title}`)
             
-            // For now, return video info and we'll implement streaming later
-            res.json({
-              success: true,
-              videoId: videoId,
-              title: video.snippet.title,
-              duration: video.contentDetails.duration,
-              message: 'Video found via YouTube Data API. Streaming implementation in progress.',
-              timestamp: new Date().toISOString()
+            // Now get the audio stream using ytdl-core
+            console.log('[youtube-api] Getting audio stream with ytdl-core')
+            const ytdl = (await import('@distube/ytdl-core')).default
+
+            const stream = ytdl(ytUrl, {
+              quality: 'highestaudio',
+              filter: (f) => (f.hasAudio && !f.hasVideo),
+              highWaterMark: 1 << 25,
+              requestOptions: { 
+                headers: { 
+                  'user-agent': ua, 
+                  'accept-language': 'en-US,en;q=0.9' 
+                } 
+              },
             })
+
+            // Stream the audio directly
+            res.setHeader('Content-Type', 'audio/mpeg')
+            stream.pipe(res)
             return
           }
         }
