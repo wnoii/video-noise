@@ -18,7 +18,7 @@ app.get('/api/youtube', async (req, res) => {
   try {
     let ytUrl = req.query.url
     if (!ytUrl || !/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(ytUrl)) {
-      res.status(400).end('Invalid url')
+      res.status(400).json({ error: 'Invalid url' })
       return
     }
 
@@ -26,10 +26,7 @@ app.get('/api/youtube', async (req, res) => {
     ytUrl = decodeURIComponent(ytUrl)
 
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Cache-Control', 'no-cache')
-    res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.setHeader('Accept-Ranges', 'none')
-    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('Content-Type', 'application/json')
 
     const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
@@ -47,37 +44,27 @@ app.get('/api/youtube', async (req, res) => {
     })()
     
     if (!videoId) {
-      res.status(400).end('Invalid YouTube URL')
+      res.status(400).json({ error: 'Invalid YouTube URL' })
       return
     }
 
     console.log(`[debug] Processing URL: ${ytUrl}, Video ID: ${videoId}`)
 
-    // Return a working test audio file for now
-    console.log('[test] Returning working test audio')
+    // Return simple JSON response
+    console.log('[json] Returning JSON response')
     
-    // Create a simple sine wave audio (1 second, 440Hz)
-    const sampleRate = 44100
-    const duration = 1 // 1 second
-    const frequency = 440 // A4 note
-    const samples = sampleRate * duration
-    
-    const audioBuffer = new ArrayBuffer(samples * 2) // 16-bit samples
-    const view = new DataView(audioBuffer)
-    
-    for (let i = 0; i < samples; i++) {
-      const sample = Math.sin(2 * Math.PI * frequency * i / sampleRate) * 0.3
-      const intSample = Math.floor(sample * 32767)
-      view.setInt16(i * 2, intSample, true) // little-endian
-    }
-    
-    res.setHeader('Content-Type', 'audio/wav')
-    res.setHeader('Content-Length', audioBuffer.byteLength)
-    res.end(Buffer.from(audioBuffer))
+    res.json({
+      success: true,
+      message: 'Backend is working! Frontend-backend connection established.',
+      videoId: videoId,
+      url: ytUrl,
+      timestamp: new Date().toISOString(),
+      note: 'YouTube audio integration will be added later. For now, this confirms the connection works.'
+    })
     
   } catch (err) {
     console.error('[youtube proxy error]', err?.message || err)
-    if (!res.headersSent) res.status(500).end('Failed to process YouTube URL')
+    res.status(500).json({ error: 'Failed to process YouTube URL' })
   }
 })
 
