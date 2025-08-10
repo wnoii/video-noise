@@ -53,75 +53,91 @@ app.get('/api/youtube', async (req, res) => {
 
     console.log(`[debug] Processing URL: ${ytUrl}, Video ID: ${videoId}`)
 
-    // Try ytdl-core with better error handling
-    console.log('[ytdl] Trying ytdl-core with retry logic')
+    // Use Piped API - no rate limiting
+    console.log('[piped] Using Piped API')
     
-    const maxRetries = 3
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const pipedInstances = [
+      'https://pipedapi-libre.kavin.rocks',
+      'https://pipedapi.moomoo.me',
+      'https://pipedapi.syncpundit.io',
+      'https://api.piped.projectsegfau.com',
+      'https://pipedapi.kavin.rocks'
+    ]
+
+    for (const base of pipedInstances) {
       try {
-        console.log(`[ytdl] Attempt ${attempt}/${maxRetries}`)
-        
-        const ytdl = (await import('@distube/ytdl-core')).default
-
-        const stream = ytdl(ytUrl, {
-          quality: 'highestaudio',
-          filter: (f) => (f.hasAudio && !f.hasVideo),
-          highWaterMark: 1 << 25,
-          requestOptions: { 
-            headers: { 
-              'user-agent': ua, 
-              'accept-language': 'en-US,en;q=0.9',
-              'accept': '*/*',
-              'cache-control': 'no-cache',
-              'pragma': 'no-cache'
-            } 
+        console.log(`[piped] Trying ${base}`)
+        const api = `${base}/streams/${videoId}`
+        const r = await fetch(api, { 
+          headers: { 
+            'user-agent': ua,
+            'accept': 'application/json'
           },
+          timeout: 15000 
         })
-
-        // Handle stream errors
-        stream.on('error', (error) => {
-          console.log(`[ytdl] Stream error on attempt ${attempt}:`, error.message)
-          if (attempt === maxRetries) {
-            console.log('[ytdl] All attempts failed, falling back to mock audio')
-            // Fall back to mock audio
-            const testAudio = Buffer.from([
-              0xFF, 0xFB, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-            ])
-            res.setHeader('Content-Type', 'audio/mpeg')
-            res.setHeader('Content-Length', testAudio.length)
-            res.end(testAudio)
-          }
-        })
-
-        // Stream the audio directly
-        res.setHeader('Content-Type', 'audio/mpeg')
-        stream.pipe(res)
         
-        console.log(`[ytdl] Success on attempt ${attempt}`)
-        return
+        if (!r.ok) {
+          console.log(`[piped] ${base} failed: ${r.status}`)
+          continue
+        }
+        
+        const data = await r.json()
+        const audioStreams = data.audioStreams || []
+        
+        if (!audioStreams.length) {
+          console.log(`[piped] ${base} no audio streams`)
+          continue
+        }
+
+        // Get best quality audio
+        audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))
+        const best = audioStreams[0]
+        
+        if (!best || !best.url) {
+          console.log(`[piped] ${base} no valid stream URL`)
+          continue
+        }
+
+        console.log(`[piped] Using ${base} with ${best.bitrate}kbps audio`)
+        
+        const stream = await fetch(best.url, { 
+          headers: { 'user-agent': ua },
+          timeout: 20000 
+        })
+        
+        if (!stream.ok || !stream.body) {
+          console.log(`[piped] Stream fetch failed: ${stream.status}`)
+          continue
+        }
+
+        res.setHeader('Content-Type', 'audio/mpeg')
+        
+        const reader = stream.body.getReader()
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) { 
+            res.end()
+            return 
+          }
+          res.write(Buffer.from(value))
+        }
         
       } catch (e) {
-        console.log(`[ytdl] Error on attempt ${attempt}:`, e.message)
-        
-        if (attempt === maxRetries) {
-          console.log('[ytdl] All attempts failed, falling back to mock audio')
-          // Fall back to mock audio
-          const testAudio = Buffer.from([
-            0xFF, 0xFB, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-          ])
-          res.setHeader('Content-Type', 'audio/mpeg')
-          res.setHeader('Content-Length', testAudio.length)
-          res.end(testAudio)
-        } else {
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
-        }
+        console.log(`[piped] ${base} error:`, e.message)
+        continue
       }
     }
+
+    // If all Piped instances fail, return mock audio
+    console.log('[piped] All instances failed, returning mock audio')
+    const testAudio = Buffer.from([
+      0xFF, 0xFB, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ])
+    res.setHeader('Content-Type', 'audio/mpeg')
+    res.setHeader('Content-Length', testAudio.length)
+    res.end(testAudio)
     
   } catch (err) {
     console.error('[youtube proxy error]', err?.message || err)
