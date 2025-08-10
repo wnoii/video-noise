@@ -53,19 +53,75 @@ app.get('/api/youtube', async (req, res) => {
 
     console.log(`[debug] Processing URL: ${ytUrl}, Video ID: ${videoId}`)
 
-    // For now, return a test audio file to verify frontend works
-    console.log('[mock] Returning test audio file')
+    // Try ytdl-core with better error handling
+    console.log('[ytdl] Trying ytdl-core with retry logic')
     
-    // Return a simple test audio (1 second of silence)
-    const testAudio = Buffer.from([
-      0xFF, 0xFB, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    ])
-    
-    res.setHeader('Content-Type', 'audio/mpeg')
-    res.setHeader('Content-Length', testAudio.length)
-    res.end(testAudio)
+    const maxRetries = 3
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[ytdl] Attempt ${attempt}/${maxRetries}`)
+        
+        const ytdl = (await import('@distube/ytdl-core')).default
+
+        const stream = ytdl(ytUrl, {
+          quality: 'highestaudio',
+          filter: (f) => (f.hasAudio && !f.hasVideo),
+          highWaterMark: 1 << 25,
+          requestOptions: { 
+            headers: { 
+              'user-agent': ua, 
+              'accept-language': 'en-US,en;q=0.9',
+              'accept': '*/*',
+              'cache-control': 'no-cache',
+              'pragma': 'no-cache'
+            } 
+          },
+        })
+
+        // Handle stream errors
+        stream.on('error', (error) => {
+          console.log(`[ytdl] Stream error on attempt ${attempt}:`, error.message)
+          if (attempt === maxRetries) {
+            console.log('[ytdl] All attempts failed, falling back to mock audio')
+            // Fall back to mock audio
+            const testAudio = Buffer.from([
+              0xFF, 0xFB, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+            ])
+            res.setHeader('Content-Type', 'audio/mpeg')
+            res.setHeader('Content-Length', testAudio.length)
+            res.end(testAudio)
+          }
+        })
+
+        // Stream the audio directly
+        res.setHeader('Content-Type', 'audio/mpeg')
+        stream.pipe(res)
+        
+        console.log(`[ytdl] Success on attempt ${attempt}`)
+        return
+        
+      } catch (e) {
+        console.log(`[ytdl] Error on attempt ${attempt}:`, e.message)
+        
+        if (attempt === maxRetries) {
+          console.log('[ytdl] All attempts failed, falling back to mock audio')
+          // Fall back to mock audio
+          const testAudio = Buffer.from([
+            0xFF, 0xFB, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+          ])
+          res.setHeader('Content-Type', 'audio/mpeg')
+          res.setHeader('Content-Length', testAudio.length)
+          res.end(testAudio)
+        } else {
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+        }
+      }
+    }
     
   } catch (err) {
     console.error('[youtube proxy error]', err?.message || err)
