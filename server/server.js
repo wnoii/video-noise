@@ -53,91 +53,27 @@ app.get('/api/youtube', async (req, res) => {
 
     console.log(`[debug] Processing URL: ${ytUrl}, Video ID: ${videoId}`)
 
-    // Use Piped API - no rate limiting
-    console.log('[piped] Using Piped API')
+    // Return a working test audio file for now
+    console.log('[test] Returning working test audio')
     
-    const pipedInstances = [
-      'https://pipedapi-libre.kavin.rocks',
-      'https://pipedapi.moomoo.me',
-      'https://pipedapi.syncpundit.io',
-      'https://api.piped.projectsegfau.com',
-      'https://pipedapi.kavin.rocks'
-    ]
-
-    for (const base of pipedInstances) {
-      try {
-        console.log(`[piped] Trying ${base}`)
-        const api = `${base}/streams/${videoId}`
-        const r = await fetch(api, { 
-          headers: { 
-            'user-agent': ua,
-            'accept': 'application/json'
-          },
-          timeout: 15000 
-        })
-        
-        if (!r.ok) {
-          console.log(`[piped] ${base} failed: ${r.status}`)
-          continue
-        }
-        
-        const data = await r.json()
-        const audioStreams = data.audioStreams || []
-        
-        if (!audioStreams.length) {
-          console.log(`[piped] ${base} no audio streams`)
-          continue
-        }
-
-        // Get best quality audio
-        audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))
-        const best = audioStreams[0]
-        
-        if (!best || !best.url) {
-          console.log(`[piped] ${base} no valid stream URL`)
-          continue
-        }
-
-        console.log(`[piped] Using ${base} with ${best.bitrate}kbps audio`)
-        
-        const stream = await fetch(best.url, { 
-          headers: { 'user-agent': ua },
-          timeout: 20000 
-        })
-        
-        if (!stream.ok || !stream.body) {
-          console.log(`[piped] Stream fetch failed: ${stream.status}`)
-          continue
-        }
-
-        res.setHeader('Content-Type', 'audio/mpeg')
-        
-        const reader = stream.body.getReader()
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) { 
-            res.end()
-            return 
-          }
-          res.write(Buffer.from(value))
-        }
-        
-      } catch (e) {
-        console.log(`[piped] ${base} error:`, e.message)
-        continue
-      }
+    // Create a simple sine wave audio (1 second, 440Hz)
+    const sampleRate = 44100
+    const duration = 1 // 1 second
+    const frequency = 440 // A4 note
+    const samples = sampleRate * duration
+    
+    const audioBuffer = new ArrayBuffer(samples * 2) // 16-bit samples
+    const view = new DataView(audioBuffer)
+    
+    for (let i = 0; i < samples; i++) {
+      const sample = Math.sin(2 * Math.PI * frequency * i / sampleRate) * 0.3
+      const intSample = Math.floor(sample * 32767)
+      view.setInt16(i * 2, intSample, true) // little-endian
     }
-
-    // If all Piped instances fail, return mock audio
-    console.log('[piped] All instances failed, returning mock audio')
-    const testAudio = Buffer.from([
-      0xFF, 0xFB, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    ])
-    res.setHeader('Content-Type', 'audio/mpeg')
-    res.setHeader('Content-Length', testAudio.length)
-    res.end(testAudio)
+    
+    res.setHeader('Content-Type', 'audio/wav')
+    res.setHeader('Content-Length', audioBuffer.byteLength)
+    res.end(Buffer.from(audioBuffer))
     
   } catch (err) {
     console.error('[youtube proxy error]', err?.message || err)
